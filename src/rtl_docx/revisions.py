@@ -174,6 +174,13 @@ def _transform(data: bytes, mode: str) -> bytes:
         if paragraph.getparent() is not None:
             _merge_into_next(paragraph)
 
+    for element in list(root.iter()):
+        if element.tag in (
+            f"{W}moveFromRangeStart", f"{W}moveFromRangeEnd",
+            f"{W}moveToRangeStart", f"{W}moveToRangeEnd",
+        ):
+            _remove(element)
+
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 

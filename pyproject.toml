@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rtl-docx"
-version = "0.2.0"
+version = "0.3.0"
 description = "RTL-first Word workflow for coding agents: Markdown builds, tracked edits, template fills, region-complete verification."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,22 +27,26 @@ dependencies = [
 
 [project.optional-dependencies]
 redline = ["python-redlines[docxodus]>=3.0.0"]
+merge = ["docxcompose>=1.4.0"]
+mcp = ["mcp>=2.0.0"]
+all = ["python-redlines[docxodus]>=3.0.0", "docxcompose>=1.4.0", "mcp>=2.0.0"]
 
 [project.scripts]
 rtl-docx = "rtl_docx.cli:main"
+rtl-docx-mcp = "rtl_docx.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/MohammadAminKoohi/rtl-docx"
 Issues = "https://github.com/MohammadAminKoohi/rtl-docx/issues"
 
 [dependency-groups]
-dev = ["pytest>=8", "openxml-audit>=0.8.0", "python-redlines[docxodus]>=3.0.0"]
+dev = ["pytest>=8", "openxml-audit>=0.8.0", "python-redlines[docxodus]>=3.0.0", "docxcompose>=1.4.0", "mcp>=2.0.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rtl_docx"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "README.md", "SKILL.md", "LICENSE"]
+include = ["src", "tests", "skills", "README.md", "CHANGELOG.md", "LICENSE", ".codex-plugin", ".mcp.json", "install.sh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

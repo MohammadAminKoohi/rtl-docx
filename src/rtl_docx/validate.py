@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import posixpath
+import re
 import zipfile
 from pathlib import Path
 
@@ -42,6 +43,10 @@ def _structural(path: Path) -> tuple[list[str], list[str]]:
                 break
 
         names = {i.filename for i in infos}
+        for name in names:
+            parts = name.replace("\\", "/").split("/")
+            if name.startswith(("/", "\\")) or ".." in parts or re.match(r"^[A-Za-z]:", name):
+                errors.append(f"unsafe path in package: {name}")
         for required in REQUIRED_PARTS:
             if required not in names:
                 errors.append(f"missing required part: {required}")
@@ -51,8 +56,11 @@ def _structural(path: Path) -> tuple[list[str], list[str]]:
         # XML well-formedness
         for name in sorted(names):
             if name.endswith((".xml", ".rels")):
+                payload = package.read(name)
+                if b"<!DOCTYPE" in payload or b"<!ENTITY" in payload:
+                    errors.append(f"DTD/entity declaration is not allowed: {name}")
                 try:
-                    etree.fromstring(package.read(name))
+                    etree.fromstring(payload)
                 except etree.XMLSyntaxError as exc:
                     errors.append(f"malformed XML in {name}: {exc}")
 
@@ -88,6 +96,9 @@ def _structural(path: Path) -> tuple[list[str], list[str]]:
             source_dir = posixpath.dirname(posixpath.dirname(name))
             for rel in rels.findall(f"{REL_NS}Relationship"):
                 if (rel.get("TargetMode") or "").lower() == "external":
+                    warnings.append(
+                        f"external relationship in {name}: {rel.get('Target')}"
+                    )
                     continue
                 target = rel.get("Target") or ""
                 if not target or target.startswith("#"):
@@ -245,14 +256,18 @@ REQUIRED_REL_PARTS = {
     "settings": (
         "word/settings.xml",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
-        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-        b'<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+        (
+            b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            b'<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
+        ),
     ),
     "fontTable": (
         "word/fontTable.xml",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml",
-        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-        b'<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+        (
+            b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            b'<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
+        ),
     ),
 }
 

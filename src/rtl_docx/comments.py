@@ -153,7 +153,7 @@ def add_comment(
             comment = doc.add_comment(
                 runs, text=text, author=author, initials=initials or ""
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise CommentError(f"could not add comment: {exc}") from exc
 
         output.parent.mkdir(parents=True, exist_ok=True)

@@ -40,9 +40,13 @@ brew install pandoc librsvg poppler
 brew install --cask libreoffice
 
 uv tool install "git+https://github.com/MohammadAminKoohi/rtl-docx"
-# optional native DOCX-to-DOCX redlining (43 MB Docxodus engine):
-uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
 rtl-docx doctor
+
+# extras, when you need them:
+uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"  # compare/audit
+uv tool install "rtl-docx[merge] @ git+https://github.com/MohammadAminKoohi/rtl-docx"    # merge
+uv tool install "rtl-docx[mcp] @ git+https://github.com/MohammadAminKoohi/rtl-docx"      # MCP server
+uv tool install "rtl-docx[all] @ git+https://github.com/MohammadAminKoohi/rtl-docx"      # all three
 ```
 
 Local development:
@@ -52,18 +56,19 @@ git clone https://github.com/MohammadAminKoohi/rtl-docx
 cd rtl-docx
 ./install.sh          # CLI + user skill, editable install
 ./install.sh --with-redline
+./install.sh --with-all
 uv sync --dev
 uv run pytest -q
 ```
 
 ## Use as an agent skill
 
-Codex CLI and OpenCode both scan `~/.agents/skills`. A skill is just a folder
-with `SKILL.md`; this repo is one:
+Codex CLI and OpenCode both scan `~/.agents/skills`. This repo ships one under
+`skills/rtl-docx`:
 
 ```bash
 git clone https://github.com/MohammadAminKoohi/rtl-docx ~/.local/share/rtl-docx
-ln -s ~/.local/share/rtl-docx ~/.agents/skills/rtl-docx
+ln -s ~/.local/share/rtl-docx/skills/rtl-docx ~/.agents/skills/rtl-docx
 uv tool install --editable ~/.local/share/rtl-docx
 ```
 
@@ -71,8 +76,22 @@ Restart Codex if it does not pick the skill up. Invoke explicitly with
 `/skills` or `$rtl-docx`, or just ask for a Persian `.docx` and let the
 description match.
 
-For a repo-scoped install, copy the folder into `.agents/skills/rtl-docx` and
-commit it.
+For a repo-scoped install, copy `skills/rtl-docx` into `.agents/skills/rtl-docx`
+and commit it.
+
+### MCP server and plugin
+
+The repo doubles as a Codex plugin: `.codex-plugin/plugin.json` points at
+`skills/` and `.mcp.json` launches `rtl-docx-mcp`.
+
+```bash
+uv tool install "rtl-docx[mcp] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
+rtl-docx-mcp            # stdio MCP server
+```
+
+The MCP surface mirrors the CLI: read, inventory, find, validate, lint, build,
+track, compare, revisions, accept/reject, audit, comments, check, fill, verify,
+convert, merge, stamp.
 
 ## Commands
 
@@ -96,6 +115,12 @@ rtl-docx comments list report.docx
 rtl-docx comments add in.docx out.docx --anchor "متن" --text "بازبینی" --author "Amin"
 
 rtl-docx fill template.docx data.json out.docx
+
+rtl-docx build report.md report.docx --toc --page-numbers --header "سربرگ"
+rtl-docx convert legacy.doc modern.docx
+rtl-docx convert report.docx report.pdf --to pdf
+rtl-docx merge cover.docx body.docx -o report.docx
+rtl-docx stamp in.docx out.docx --footer "پانویس" --page-numbers
 
 rtl-docx inventory report.docx               # body/tables/headers/footers/images
 rtl-docx validate report.docx                # package + OOXML schema checks
@@ -123,6 +148,9 @@ rtl-docx verify report.docx                  # PDF + 150-dpi PNG pages
 - **Persian-aware matching.** `--normalize-persian` treats Arabic/Persian
   yeh/kaf and Arabic-Indic digits as equivalent; `lint` flags mixed direction,
   Arabic variants, Latin punctuation and bidi controls.
+- **Untrusted-file checks.** `validate` rejects path traversal, DTD/entity
+  declarations, oversized or zip-bomb packages, and warns on external
+  relationships and macros. `read` enforces size and compression limits.
 
 ## The RTL details
 
@@ -157,7 +185,9 @@ What is new is the packaging and the defaults:
    an `audit` that rejects revisions to prove nothing was edited untracked.
 4. **Persian-aware matching and linting** (`--normalize-persian`, `lint`) on top
    of region-complete assertions.
-5. A **single deterministic CLI** plus a skill that encodes the validate,
+5. **Packaging as a real agent surface**: a Codex/OpenCode skill, a plugin
+   manifest, and an MCP server exposing the same deterministic operations.
+6. A **single deterministic CLI** plus a skill that encodes the validate,
    round-trip and render-and-look loop, so agents cannot skip it.
 
 That is enough for a genuinely useful skill. It is not a new file format or a
@@ -177,6 +207,12 @@ standards contribution — and the README should not pretend otherwise.
   the anchor, which may highlight more than the exact characters.
 - `check` passes at 0.95 similarity by default because tables and footnotes
   render differently; use `--strict` for exact comparison of text-only docs.
+- `convert`, `merge` and `stamp` write new files; conversion fidelity is
+  LibreOffice's, not Word's.
+- Page numbers use a real `PAGE` field; LibreOffice updates them, Word may show
+  the cached value until fields update (print/preview usually does).
+- MCP tools run with the user's filesystem permissions; run the server only in
+  trusted workspaces.
 - Filling requires placeholders docxtpl can see (not split across runs).
 - Visual fidelity depends on fonts available to LibreOffice; Word may substitute
   differently. Always eyeball the PNGs.

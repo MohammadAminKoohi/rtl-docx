@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from docx.oxml import OxmlElement
@@ -12,8 +12,11 @@ from docx.oxml.ns import qn
 from docx.text.run import Run
 
 from .common import (
-    iter_regions, open_document, paragraph_text,
-    paragraph_text_without_insertions, region_text,
+    iter_regions,
+    open_document,
+    paragraph_text,
+    paragraph_text_without_insertions,
+    region_text,
 )
 from .persian import count_occurrences, map_variants
 
@@ -190,7 +193,7 @@ def apply_edits(
             raise EditError("'find' and 'replace' are identical")
 
     doc = open_document(source)
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    date = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     before_regions = len(region_text(doc))
 
     per_edit: list[tuple[str, int]] = []
@@ -201,7 +204,6 @@ def apply_edits(
     for edit in edits:
         needle, replacement = edit["find"], edit["replace"]
         texts_before = {label: paragraph_text(p) for label, p in iter_regions(doc)}
-        old_before = _counts(texts_before, needle, normalize)
         new_before = _counts(texts_before, replacement, normalize)
 
         found_by_region: dict[str, int] = {}

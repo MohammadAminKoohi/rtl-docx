@@ -168,14 +168,14 @@ def test_build_rtl_docx(tmp_path):
     doc = Document(out)
     assert any("عنوان" in p.text for p in doc.paragraphs)
 
-    code = [p for p in doc.paragraphs if "x = 1" in p.text][0]
+    code = next(p for p in doc.paragraphs if "x = 1" in p.text)
     ppr = code._p.find(qn("w:pPr"))
     assert ppr.find(qn("w:bidi")).get(qn("w:val")) == "0"
 
     # Run-level direction is valid; style-level w:rtl is not allowed by OOXML.
     code_run = code._p.find(qn("w:r"))
     assert code_run.find(qn("w:rPr")).find(qn("w:rtl")).get(qn("w:val")) == "0"
-    body = [p for p in doc.paragraphs if "متن فارسی" in p.text][0]
+    body = next(p for p in doc.paragraphs if "متن فارسی" in p.text)
     body_run = body._p.find(qn("w:r"))
     assert body_run.find(qn("w:rPr")).find(qn("w:rtl")).get(qn("w:val")) == "1"
 
@@ -262,7 +262,10 @@ def test_comments_add_and_list(regions_docx, tmp_path):
 
 def test_revisions_accept_reject_audit(regions_docx, tmp_path):
     from rtl_docx.revisions import (
-        accept_changes, audit_changes, list_revisions, reject_changes,
+        accept_changes,
+        audit_changes,
+        list_revisions,
+        reject_changes,
     )
 
     tracked = tmp_path / "tracked.docx"
@@ -344,3 +347,165 @@ def test_roundtrip_check(tmp_path):
 
     result = check_document(out, md)
     assert result["clean"], result["diff"]
+
+
+def test_mcp_server(regions_docx):
+    import asyncio
+    import json
+
+    from rtl_docx.mcp_server import mcp
+
+    async def run():
+        names = {tool.name for tool in await mcp.list_tools()}
+        assert {"document_inventory", "find_text", "track_edits",
+                "compare_documents", "validate_document"} <= names
+
+        result = await mcp.call_tool(
+            "document_inventory", {"path": str(regions_docx)}
+        )
+        data = json.loads(result.content[0].text)
+        assert data["tables"] == 1 and data["headers"] == 1
+
+        result = await mcp.call_tool(
+            "find_text", {"path": str(regions_docx), "text": "OLD"}
+        )
+        data = json.loads(result.content[0].text)
+        assert data["total"] == 4
+
+    asyncio.run(run())
+
+
+def test_merge_documents(tmp_path):
+    from rtl_docx.merge import merge_documents
+    from rtl_docx.validate import validate_docx
+
+    paths = []
+    for index, text in enumerate(("سند اول", "سند دوم")):
+        doc = Document()
+        doc.add_paragraph(text)
+        path = tmp_path / f"part{index}.docx"
+        doc.save(path)
+        paths.append(path)
+
+    out = tmp_path / "merged.docx"
+    merge_documents(paths, out)
+    text = dump_text(out)
+    assert "سند اول" in text and "سند دوم" in text
+    assert validate_docx(out)["valid"]
+
+
+def test_stamp_header_footer_page_numbers(tmp_path):
+    from rtl_docx.stamp import stamp_copy
+    from rtl_docx.validate import validate_docx
+
+    doc = Document()
+    doc.add_paragraph("متن")
+    source = tmp_path / "in.docx"
+    doc.save(source)
+
+    out = tmp_path / "stamped.docx"
+    stamp_copy(
+        source, out, header="سربرگ", footer="پانویس",
+        page_numbers=True, page_label="صفحه ",
+    )
+    stamped = Document(out)
+    assert stamped.sections[0].header.paragraphs[0].text == "سربرگ"
+    footer_xml = stamped.sections[0].footer.paragraphs[0]._p.xml
+    assert "PAGE" in footer_xml
+    assert validate_docx(out)["valid"]
+
+
+@pytest.mark.skipif(not shutil.which("pandoc"), reason="pandoc not installed")
+def test_build_toc_and_page_numbers(tmp_path):
+    from rtl_docx.build import build_docx
+    from rtl_docx.validate import validate_docx
+
+    md = tmp_path / "report.md"
+    md.write_text(
+        "# عنوان\n\n## بخش یک\n\nمتن.\n\n## بخش دو\n\nمتن بیشتر.\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "report.docx"
+    build_docx(
+        md, out, toc=True, page_numbers=True,
+        header="سربرگ", footer="پانویس",
+    )
+    doc = Document(out)
+    assert doc.sections[0].header.paragraphs[0].text == "سربرگ"
+    assert "PAGE" in doc.sections[0].footer.paragraphs[0]._p.xml
+    assert validate_docx(out)["valid"]
+
+
+@pytest.mark.skipif(not shutil.which("soffice"), reason="LibreOffice not installed")
+def test_convert_docx_to_pdf(tmp_path):
+    from rtl_docx.convert import convert_document
+
+    doc = Document()
+    doc.add_paragraph("PDF")
+    source = tmp_path / "in.docx"
+    doc.save(source)
+    out = convert_document(source, tmp_path / "out.pdf", to="pdf", timeout=90)
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_validate_rejects_path_traversal(regions_docx, tmp_path):
+    import zipfile
+
+    from rtl_docx.validate import validate_docx
+
+    target = tmp_path / "evil.docx"
+    with zipfile.ZipFile(regions_docx) as zin, zipfile.ZipFile(target, "w") as zout:
+        for info in zin.infolist():
+            zout.writestr(info, zin.read(info.filename))
+        zout.writestr("../evil.txt", "x")
+
+    result = validate_docx(target, schema=False)
+    assert not result["valid"]
+    assert any("unsafe path" in error for error in result["errors"])
+
+
+def test_validate_warns_on_external_relationships(regions_docx, tmp_path):
+    import zipfile
+
+    from lxml import etree
+
+    from rtl_docx.validate import REL_NS, validate_docx
+
+    target = tmp_path / "external.docx"
+    with zipfile.ZipFile(regions_docx) as zin:
+        payloads = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+    rels_name = "word/_rels/document.xml.rels"
+    root = etree.fromstring(payloads[rels_name])
+    rel = etree.SubElement(root, f"{REL_NS}Relationship")
+    rel.set("Id", "rIdExternal")
+    rel.set("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink")
+    rel.set("Target", "https://example.com")
+    rel.set("TargetMode", "External")
+    payloads[rels_name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+    with zipfile.ZipFile(target, "w") as zout:
+        for name, payload in payloads.items():
+            zout.writestr(name, payload)
+
+    result = validate_docx(target, schema=False)
+    assert any("external relationship" in warning for warning in result["warnings"])
+
+
+def test_plugin_manifest_and_skill_layout():
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / ".codex-plugin" / "plugin.json").read_text())
+    assert manifest["name"] == "rtl-docx"
+    assert manifest["version"] == "0.3.0"
+    assert (root / "skills" / "rtl-docx" / "SKILL.md").exists()
+    assert manifest["skills"] == "./skills/"
+
+    mcp_config = json.loads((root / ".mcp.json").read_text())
+    assert mcp_config["mcpServers"]["rtl-docx"]["command"] == "rtl-docx-mcp"
+
+    skill = (root / "skills" / "rtl-docx" / "SKILL.md").read_text()
+    assert skill.startswith("---\nname: rtl-docx\n")
+    assert "version: \"0.3.0\"" in skill

@@ -24,7 +24,13 @@ def cmd_build(args) -> int:
     from .build import build_docx
 
     try:
-        out = build_docx(args.source, args.output, args.reference, args.pandoc_arg)
+        out = build_docx(
+            args.source, args.output, args.reference, args.pandoc_arg,
+            toc=args.toc, toc_depth=args.toc_depth,
+            number_sections=args.number_sections,
+            page_numbers=args.page_numbers, header=args.header,
+            footer=args.footer, page_label=args.page_label, align=args.align,
+        )
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError) as exc:
         _err(f"error: {exc}")
         return 2
@@ -399,13 +405,62 @@ def cmd_lint(args) -> int:
     return 1 if args.strict and result["total"] else 0
 
 
+def cmd_convert(args) -> int:
+    from .convert import ConvertError, convert_document
+
+    to = args.to
+    if to is None:
+        to = args.output.suffix.lstrip(".") if args.output and args.output.suffix else "docx"
+    try:
+        out = convert_document(args.source, args.output, to=to, timeout=args.timeout)
+    except (FileNotFoundError, FileExistsError, ConvertError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"converted: {out}")
+    return 0
+
+
+def cmd_merge(args) -> int:
+    from .merge import MergeError, merge_documents
+
+    try:
+        out = merge_documents(
+            args.inputs, args.output, page_break=not args.no_page_break
+        )
+    except (FileNotFoundError, FileExistsError, MergeError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"merged: {out}")
+    return 0
+
+
+def cmd_stamp(args) -> int:
+    from .stamp import StampError, stamp_copy
+
+    if not (args.header or args.footer or args.page_numbers):
+        _err("error: provide --header, --footer or --page-numbers")
+        return 2
+    try:
+        out = stamp_copy(
+            args.input, args.output,
+            header=args.header, footer=args.footer,
+            page_numbers=args.page_numbers, page_label=args.page_label,
+            align=args.align,
+        )
+    except (FileNotFoundError, FileExistsError, StampError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"stamped: {out}")
+    return 0
+
+
 def cmd_doctor(_args) -> int:
     from .build import DEFAULT_REFERENCE
     from .verify import VerifyError, find_soffice
 
     def first_line(cmd: list[str]) -> str:
         try:
-            out = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=False)
             return (out.stdout or out.stderr).splitlines()[0].strip()
         except Exception as exc:  # noqa: BLE001
             return f"not available ({exc})"
@@ -431,6 +486,16 @@ def cmd_doctor(_args) -> int:
         print("redline engine  ok (python-redlines)")
     except ImportError:
         print('redline engine  optional: uv tool install "rtl-docx[redline]"')
+    try:
+        import docxcompose  # noqa: F401
+        print("merge support   ok (docxcompose)")
+    except ImportError:
+        print('merge support   optional: uv tool install "rtl-docx[merge]"')
+    try:
+        import mcp  # noqa: F401
+        print("mcp server      ok (mcp)")
+    except ImportError:
+        print('mcp server      optional: uv tool install "rtl-docx[mcp]"')
     return 0
 
 
@@ -449,6 +514,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("output", type=Path)
     p.add_argument("--reference", type=Path, help="custom reference.docx")
     p.add_argument("--pandoc-arg", action="append", default=[], help="extra pandoc argument")
+    p.add_argument("--toc", action="store_true", help="insert a table of contents")
+    p.add_argument("--toc-depth", type=int)
+    p.add_argument("--number-sections", action="store_true")
+    p.add_argument("--page-numbers", action="store_true")
+    p.add_argument("--header")
+    p.add_argument("--footer")
+    p.add_argument("--page-label", default="")
+    p.add_argument("--align", choices=["left", "center", "right"], default="center")
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("reference", help="export the bundled RTL reference template")
@@ -580,6 +653,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--strict", action="store_true", help="exit 1 when findings exist")
     p.set_defaults(func=cmd_lint)
+
+    p = sub.add_parser("convert", help="convert via LibreOffice (doc->docx, docx->pdf)")
+    p.add_argument("source", type=Path)
+    p.add_argument("output", type=Path, nargs="?")
+    p.add_argument("--to", choices=["docx", "pdf", "odt", "rtf", "txt"])
+    p.add_argument("--timeout", type=int, default=180)
+    p.set_defaults(func=cmd_convert)
+
+    p = sub.add_parser("merge", help="merge several .docx files, preserving styles")
+    p.add_argument("inputs", type=Path, nargs="+")
+    p.add_argument("-o", "--output", type=Path, required=True)
+    p.add_argument("--no-page-break", action="store_true")
+    p.set_defaults(func=cmd_merge)
+
+    p = sub.add_parser("stamp", help="add header/footer/page numbers to every section")
+    p.add_argument("input", type=Path)
+    p.add_argument("output", type=Path)
+    p.add_argument("--header")
+    p.add_argument("--footer")
+    p.add_argument("--page-numbers", action="store_true")
+    p.add_argument("--page-label", default="")
+    p.add_argument("--align", choices=["left", "center", "right"], default="center")
+    p.set_defaults(func=cmd_stamp)
 
     p = sub.add_parser("doctor", help="check external dependencies")
     p.set_defaults(func=cmd_doctor)

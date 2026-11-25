@@ -1,0 +1,30 @@
+{
+  "name": "rtl-docx",
+  "version": "0.3.0",
+  "description": "RTL-first Word workflow for coding agents: Markdown builds, native redlines, tracked edits, comments, OOXML validation and render verification.",
+  "author": {
+    "name": "Mohammad Amin Koohi",
+    "url": "https://github.com/MohammadAminKoohi"
+  },
+  "homepage": "https://github.com/MohammadAminKoohi/rtl-docx",
+  "repository": "https://github.com/MohammadAminKoohi/rtl-docx",
+  "license": "MIT",
+  "keywords": ["docx", "word", "rtl", "persian", "farsi", "redline", "tracked-changes", "pandoc"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "RTL DOCX",
+    "shortDescription": "Persian/RTL Word docs: build, redline, verify",
+    "longDescription": "Create Persian/Arabic right-to-left Word documents from Markdown, redline two DOCX versions, propose tracked changes with per-region receipts, add comments, validate OOXML, and render pages for visual review.",
+    "developerName": "Mohammad Amin Koohi",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "websiteURL": "https://github.com/MohammadAminKoohi/rtl-docx",
+    "brandColor": "#0F766E",
+    "defaultPrompt": [
+      "Build a Persian Word report from this Markdown and verify it.",
+      "Redline these two DOCX versions with tracked changes.",
+      "Audit this DOCX for untracked edits and Persian typos."
+    ]
+  }
+}

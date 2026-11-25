@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0
+
+- MCP server (`rtl-docx-mcp`, optional `[mcp]` extra) exposing read, inventory,
+  find, validate, lint, build, track, compare, revisions, accept/reject, audit,
+  comments, check, fill, verify, convert, merge and stamp.
+- Repo is now a Codex plugin: `.codex-plugin/plugin.json`, `.mcp.json`, and the
+  skill moved to `skills/rtl-docx/`; installer links that folder.
+- `convert` — LibreOffice-backed `.doc`/`.odt`/`.rtf` → `.docx`, `.docx` → PDF.
+- `merge` — merge several `.docx` files preserving styles, numbering and headers
+  (optional `[merge]` extra, docxcompose).
+- `stamp` — headers, footers and real `PAGE` fields on every section.
+- `build --toc`, `--toc-depth`, `--number-sections`, `--page-numbers`,
+  `--header`, `--footer`, `--page-label`, `--align`.
+- Security: ZIP path-traversal rejection, DTD/entity rejection, external
+  relationship warnings, read-side size/compression limits.
+- Revision engine also resolves move range markers; `accept`/`reject` cover
+  body, tables, headers, footers and notes.
+
 ## 0.2.0
 
 - `compare` — native tracked-change redline between two .docx files

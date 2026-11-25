@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rtl-docx": {
+      "command": "rtl-docx-mcp",
+      "args": []
+    }
+  }
+}

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.11+ and uv. pandoc is needed for builds; LibreOffice (soffice) and poppler (pdftoppm) for render verification.
 metadata:
   author: Mohammad Amin Koohi
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # RTL DOCX
@@ -27,11 +27,16 @@ uv tool install --editable /path/to/rtl-docx     # local checkout
 # or, after publishing:
 uv tool install "git+https://github.com/MohammadAminKoohi/rtl-docx"
 
-# add native DOCX-to-DOCX redlining (43 MB engine):
-uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
+# optional extras:
+uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"  # compare/audit
+uv tool install "rtl-docx[mcp] @ git+https://github.com/MohammadAminKoohi/rtl-docx"      # MCP server
+uv tool install "rtl-docx[merge] @ git+https://github.com/MohammadAminKoohi/rtl-docx"    # merge
+uv tool install "rtl-docx[all] @ git+https://github.com/MohammadAminKoohi/rtl-docx"      # everything
 ```
 
-`compare` needs the `redline` extra; everything else runs on the core install.
+`compare` needs `redline`; `merge` needs `merge`; the MCP server needs `mcp`. The
+core install covers build, track, comments, validate, check, lint, convert and
+stamp.
 
 If `pandoc`, `soffice` or `pdftoppm` are missing:
 
@@ -59,6 +64,9 @@ brew install pandoc librsvg poppler && brew install --cask libreoffice
 | Verify text everywhere | `rtl-docx find FILE.docx "TEXT" --exact N` |
 | Persian variants / lint | `--normalize-persian`, `rtl-docx lint` |
 | Round-trip build check | `rtl-docx check OUT.docx IN.md` |
+| Convert legacy / PDF | `rtl-docx convert IN.doc OUT.docx` |
+| Merge documents | `rtl-docx merge A.docx B.docx -o OUT.docx` |
+| Header/footer/page numbers | `rtl-docx stamp IN.docx OUT.docx --page-numbers` |
 | Render for visual review | `rtl-docx verify FILE.docx` |
 
 ## 2. Hard rules
@@ -99,6 +107,11 @@ rtl-docx verify output/report.docx
 - Keep images next to the `.md` (relative paths); pandoc embeds them. SVG needs
   `rsvg-convert` (librsvg).
 - Fenced code and inline code are forced LTR automatically.
+- Report options: `--toc`, `--toc-depth N`, `--number-sections`,
+  `--page-numbers`, `--header "..."`, `--footer "..."`, `--page-label "صفحه "`.
+  Page-number fields are real `PAGE` fields, centred by default.
+- `stamp IN OUT --header ... --footer ... --page-numbers` adds them to an
+  existing document.
 
 ## 4. Edit an existing document (tracked changes)
 
@@ -159,7 +172,35 @@ rtl-docx fill templates/invoice.docx invoice.json output/invoice_0042.docx
 - Missing keys fail loudly (StrictUndefined); unresolved `{{` markers in the
   saved package are a hard failure.
 
-## 8. Round-trip and RTL lint
+## 8. Convert, merge, stamp
+
+```bash
+rtl-docx convert legacy.doc modern.docx          # LibreOffice conversion
+rtl-docx convert report.docx report.pdf --to pdf
+rtl-docx merge cover.docx body.docx -o report.docx
+rtl-docx stamp report.docx final.docx --header "سربرگ" --footer "پانویس" --page-numbers
+```
+
+- Convert/merge/stamp write new files and validate the package structurally.
+- Merge preserves styles, numbering and headers via docxcompose; a page break
+  separates documents unless `--no-page-break`.
+- `stamp` works on every section and emits a real `PAGE` field.
+
+## 9. MCP server (optional)
+
+If the client does not run shell commands, expose the same operations over MCP:
+
+```bash
+uv tool install "rtl-docx[mcp] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
+rtl-docx-mcp
+```
+
+Tools include read, inventory, find, validate, lint, build, track, compare,
+revisions, accept/reject, audit, comments, check, fill, verify, convert, merge
+and stamp. The bundled plugin manifest (`.codex-plugin/plugin.json`) points at
+`skills/` and `.mcp.json`.
+
+## 10. Round-trip and RTL lint
 
 ```bash
 rtl-docx check OUT.docx IN.md          # PASS at ratio >= 0.95; --strict exact
@@ -172,7 +213,7 @@ differences are reported but still PASS; inspect the diff, do not ignore it.
 `lint` flags Arabic yeh/kaf, Arabic-Indic digits, Latin punctuation in Persian
 text, direction mismatches, bidi controls and double spaces.
 
-## 9. Validate and visually verify
+## 11. Validate and visually verify
 
 ```bash
 rtl-docx validate FILE.docx         # package, relationships, content types, XSD
@@ -194,7 +235,7 @@ Read the PNGs with vision and check for:
 If vision is unavailable, say so explicitly and report the machine checks
 instead of claiming a visual review.
 
-## 10. Done checklist
+## 12. Done checklist
 
 - [ ] Output is a new path; the input is untouched.
 - [ ] `validate` is clean.
@@ -202,5 +243,6 @@ instead of claiming a visual review.
 - [ ] A redline passes `audit` with the intended author.
 - [ ] `check` PASS (or `--strict` clean for text-only docs).
 - [ ] `lint` findings reviewed; `--strict` clean when the document is prose.
+- [ ] Converted/merged files validate structurally; merged text is complete.
 - [ ] `verify` succeeds; every page PNG was inspected.
 - [ ] Report page count, regions changed, and warnings (font substitution, etc.).

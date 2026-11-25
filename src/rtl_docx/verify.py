@@ -56,7 +56,7 @@ def verify_docx(
             str(path.resolve()),
         ]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired as exc:
             raise VerifyError(
                 f"LibreOffice timed out after {timeout}s. The file may be corrupt, "

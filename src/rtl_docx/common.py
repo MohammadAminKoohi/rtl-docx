@@ -4,14 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from zipfile import BadZipFile
 
 from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 from docx.oxml.ns import qn
 from docx.table import Table
 
 
 def open_document(path: str | Path):
-    return Document(str(path))
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"not found: {path}")
+    try:
+        return Document(str(path))
+    except (PackageNotFoundError, BadZipFile) as exc:
+        raise FileNotFoundError(f"not a valid .docx package: {path}") from exc
 
 
 def _dedupe_cells(table: Table):

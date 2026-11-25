@@ -130,6 +130,14 @@ def build_docx(
     output: str | Path,
     reference: str | Path | None = None,
     extra_pandoc_args: list[str] | None = None,
+    toc: bool = False,
+    toc_depth: int | None = None,
+    number_sections: bool = False,
+    page_numbers: bool = False,
+    header: str | None = None,
+    footer: str | None = None,
+    page_label: str = "",
+    align: str = "center",
 ) -> Path:
     source, output = Path(source), Path(output)
     if not source.exists():
@@ -158,9 +166,22 @@ def build_docx(
         "-o", str(output),
         *(extra_pandoc_args or []),
     ]
+    if toc:
+        cmd.append("--toc")
+    if toc_depth:
+        cmd.extend(["--toc-depth", str(toc_depth)])
+    if number_sections:
+        cmd.append("--number-sections")
     subprocess.run(cmd, check=True)
     apply_rtl_direction(output)
     drop_styles_with_effects(output)
+
+    if header is not None or footer is not None or page_numbers:
+        from .stamp import stamp_document
+        stamp_document(
+            output, header=header, footer=footer,
+            page_numbers=page_numbers, page_label=page_label, align=align,
+        )
     return output
 
 
