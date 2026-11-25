@@ -164,3 +164,143 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def sanitize_package(path: str | Path) -> int:
+    """Remove relationships and content-type overrides that point at missing parts.
+
+    Some editors leave dangling references; Word tolerates them, strict
+    validators and other consumers do not.
+    """
+    path = Path(path)
+    with zipfile.ZipFile(path) as zin:
+        names = zin.namelist()
+        payloads = {name: zin.read(name) for name in names}
+
+    removed = 0
+    for name in list(payloads):
+        if not name.endswith(".rels"):
+            continue
+        try:
+            root = etree.fromstring(payloads[name])
+        except etree.XMLSyntaxError:
+            continue
+        source_dir = posixpath.dirname(posixpath.dirname(name))
+        changed = False
+        for rel in list(root.findall(f"{REL_NS}Relationship")):
+            if (rel.get("TargetMode") or "").lower() == "external":
+                continue
+            target = rel.get("Target") or ""
+            if not target or target.startswith("#"):
+                continue
+            resolved = posixpath.normpath(posixpath.join(source_dir, target))
+            if resolved not in names:
+                root.remove(rel)
+                removed += 1
+                changed = True
+        if changed:
+            payloads[name] = etree.tostring(root, xml_declaration=True,
+                                            encoding="UTF-8", standalone=True)
+
+    if "[Content_Types].xml" in payloads:
+        try:
+            root = etree.fromstring(payloads["[Content_Types].xml"])
+        except etree.XMLSyntaxError:
+            root = None
+        if root is not None:
+            changed = False
+            for override in list(root.findall(f"{CT_NS}Override")):
+                part = (override.get("PartName") or "").lstrip("/")
+                if part and part not in names:
+                    root.remove(override)
+                    removed += 1
+                    changed = True
+            if changed:
+                payloads["[Content_Types].xml"] = etree.tostring(
+                    root, xml_declaration=True, encoding="UTF-8", standalone=True
+                )
+
+    if removed:
+        import os
+        tmp = path.with_name(path.stem + ".tmp.docx")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for name, payload in payloads.items():
+                zout.writestr(name, payload)
+        os.replace(tmp, path)
+    return removed
+
+
+REL_TYPES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
+def _theme_payload() -> bytes:
+    with zipfile.ZipFile(Path(__file__).parent / "assets" / "reference.docx") as package:
+        return package.read("word/theme/theme1.xml")
+
+
+REQUIRED_REL_PARTS = {
+    "theme": (
+        "word/theme/theme1.xml",
+        "application/vnd.openxmlformats-officedocument.theme+xml",
+        _theme_payload(),
+    ),
+    "settings": (
+        "word/settings.xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        b'<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+    ),
+    "fontTable": (
+        "word/fontTable.xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml",
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        b'<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+    ),
+}
+
+
+def repair_required_parts(path: str | Path) -> int:
+    """Restore settings/fontTable parts when a producer left dangling refs."""
+    path = Path(path)
+    with zipfile.ZipFile(path) as zin:
+        names = zin.namelist()
+        payloads = {name: zin.read(name) for name in names}
+
+    rels_name = "word/_rels/document.xml.rels"
+    if rels_name not in payloads:
+        return 0
+    rels = etree.fromstring(payloads[rels_name])
+    existing_types = {rel.get("Type") for rel in rels.findall(f"{REL_NS}Relationship")}
+    ct = etree.fromstring(payloads["[Content_Types].xml"])
+    overrides = {el.get("PartName") for el in ct.findall(f"{CT_NS}Override")}
+
+    repaired = 0
+    for rel_type, (part, content_type, payload) in REQUIRED_REL_PARTS.items():
+        type_uri = REL_TYPES + rel_type
+        if type_uri in existing_types and part in payloads:
+            continue
+        if part not in payloads:
+            payloads[part] = payload
+            repaired += 1
+        if type_uri not in existing_types:
+            rel = etree.SubElement(rels, f"{REL_NS}Relationship")
+            rel.set("Id", f"rIdRtl{rel_type.capitalize()}")
+            rel.set("Type", type_uri)
+            rel.set("Target", posixpath.relpath(part, "word"))
+            repaired += 1
+        if f"/{part}" not in overrides:
+            override = etree.SubElement(ct, f"{CT_NS}Override")
+            override.set("PartName", f"/{part}")
+            override.set("ContentType", content_type)
+            repaired += 1
+
+    if repaired:
+        payloads[rels_name] = etree.tostring(rels, xml_declaration=True,
+                                             encoding="UTF-8", standalone=True)
+        payloads["[Content_Types].xml"] = etree.tostring(ct, xml_declaration=True,
+                                                         encoding="UTF-8", standalone=True)
+        import os
+        tmp = path.with_name(path.stem + ".tmp.docx")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for name, payload in payloads.items():
+                zout.writestr(name, payload)
+        os.replace(tmp, path)
+    return repaired

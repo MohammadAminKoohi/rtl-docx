@@ -80,6 +80,16 @@ def paragraph_text(paragraph) -> str:
     return "".join(out)
 
 
+def paragraph_text_without_insertions(paragraph) -> str:
+    """Visible text ignoring runs inside <w:ins> (for 'old text survived' checks)."""
+    out: list[str] = []
+    for node in paragraph._p.iter(qn("w:t")):
+        if any(anc.tag == qn("w:ins") for anc in node.iterancestors()):
+            continue
+        out.append(node.text or "")
+    return "".join(out)
+
+
 def region_text(doc) -> dict[str, str]:
     """Region label -> visible text, preserving document order."""
     out: dict[str, str] = {}

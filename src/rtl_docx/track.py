@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +11,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.run import Run
 
-from .common import iter_regions, open_document, region_text
+from .common import (
+    iter_regions, open_document, paragraph_text,
+    paragraph_text_without_insertions, region_text,
+)
+from .persian import count_occurrences, map_variants
 
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 UNSAFE_RUN_TAGS = (
@@ -71,10 +74,19 @@ def _stamp(el, author: str, date: str) -> None:
     el.set(qn("w:date"), date)
 
 
-def _replace_once(paragraph, needle: str, replacement: str, author: str, date: str) -> bool:
+def _replace_once(
+    paragraph,
+    needle: str,
+    replacement: str,
+    author: str,
+    date: str,
+    normalize: bool = False,
+) -> bool:
     runs = paragraph.runs
     full = "".join(r.text for r in runs)
-    idx = full.find(needle)
+    haystack = map_variants(full) if normalize else full
+    target = map_variants(needle) if normalize else needle
+    idx = haystack.find(target)
     if idx < 0:
         return False
 
@@ -141,17 +153,27 @@ def _replace_once(paragraph, needle: str, replacement: str, author: str, date: s
     return True
 
 
+def _counts(texts: dict[str, str], needle: str, normalize: bool) -> dict[str, int]:
+    if not needle:
+        return {}
+    return {
+        label: count_occurrences(text, needle, normalize)
+        for label, text in texts.items()
+    }
+
+
 def apply_edits(
     source: str | Path,
     output: str | Path,
     edits: list[dict[str, str]],
     author: str = "Codex",
     dry_run: bool = False,
+    normalize: bool = False,
 ) -> dict:
     """Apply find/replace edits as w:ins/w:del revisions.
 
-    Returns {"replacements": int, "per_edit": [(find, count), ...]}.
-    Raises FileExistsError rather than overwrite, EditError if a match is absent.
+    Returns per-region receipts: where each edit landed, how much old text is
+    left visible, and how much new text appeared.
     """
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
@@ -169,45 +191,84 @@ def apply_edits(
 
     doc = open_document(source)
     date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    before = region_text(doc)
+    before_regions = len(region_text(doc))
 
     per_edit: list[tuple[str, int]] = []
+    receipts: list[dict] = []
     misses: list[str] = []
     total = 0
+
     for edit in edits:
         needle, replacement = edit["find"], edit["replace"]
+        texts_before = {label: paragraph_text(p) for label, p in iter_regions(doc)}
+        old_before = _counts(texts_before, needle, normalize)
+        new_before = _counts(texts_before, replacement, normalize)
+
+        found_by_region: dict[str, int] = {}
         found = 0
-        for _label, paragraph in iter_regions(doc):
-            while _replace_once(paragraph, needle, replacement, author, date):
+        for label, paragraph in iter_regions(doc):
+            occurrences = count_occurrences(paragraph_text(paragraph), needle, normalize)
+            for _ in range(occurrences):
+                if not _replace_once(paragraph, needle, replacement, author, date, normalize):
+                    raise EditError(f"match disappeared while editing {label}")
                 found += 1
-                total += 1
+                found_by_region[label] = found_by_region.get(label, 0) + 1
+        total += found
         per_edit.append((needle, found))
         if found == 0:
             misses.append(needle)
+
+        texts_after = {label: paragraph_text(p) for label, p in iter_regions(doc)}
+        old_texts_after = {
+            label: paragraph_text_without_insertions(p) for label, p in iter_regions(doc)
+        }
+        old_after = _counts(old_texts_after, needle, normalize)
+        new_after = _counts(texts_after, replacement, normalize)
+
+        regions = {}
+        for label, count in found_by_region.items():
+            regions[label] = {
+                "found": count,
+                "old_left": old_after.get(label, 0),
+                "new_added": new_after.get(label, 0) - new_before.get(label, 0),
+            }
+        for label, left in old_after.items():
+            if left:
+                regions.setdefault(label, {"found": 0, "old_left": left, "new_added": 0})
+        receipts.append({"find": needle, "replace": replacement, "found": found, "regions": regions})
 
     if misses:
         raise EditError("not found: " + ", ".join(repr(m) for m in misses))
     if total == 0:
         raise EditError("no changes produced")
 
+    for receipt in receipts:
+        for label, stats in receipt["regions"].items():
+            if stats["old_left"]:
+                raise EditError(
+                    f"verification failed: {stats['old_left']} visible occurrence(s) of "
+                    f"{receipt['find']!r} remain in {label}"
+                )
+
     if not dry_run:
         output.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output))
-
-        # Verification: visible text must retain no instance of the old string.
-        after = region_text(open_document(output))
-        visible = "\n".join(after.values())
-        for edit in edits:
-            left = visible.count(edit["find"])
-            if left:
+        saved = {
+            label: paragraph_text_without_insertions(p)
+            for label, p in iter_regions(open_document(output))
+        }
+        for receipt in receipts:
+            leftover = sum(_counts(saved, receipt["find"], normalize).values())
+            if leftover:
                 raise EditError(
-                    f"verification failed: {left} visible occurrence(s) of "
-                    f"{edit['find']!r} remain"
+                    f"verification failed after save: {leftover} occurrence(s) of "
+                    f"{receipt['find']!r} remain"
                 )
 
     return {
         "replacements": total,
         "per_edit": per_edit,
+        "receipts": receipts,
         "dry_run": dry_run,
-        "regions_before": len(before),
+        "regions_before": before_regions,
     }

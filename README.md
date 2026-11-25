@@ -32,7 +32,7 @@ up:
 
 ## Install
 
-Requires Python 3.10+, [uv](https://docs.astral.sh/uv/), and for full
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and for full
 functionality `pandoc`, LibreOffice and poppler:
 
 ```bash
@@ -40,6 +40,8 @@ brew install pandoc librsvg poppler
 brew install --cask libreoffice
 
 uv tool install "git+https://github.com/MohammadAminKoohi/rtl-docx"
+# optional native DOCX-to-DOCX redlining (43 MB Docxodus engine):
+uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
 rtl-docx doctor
 ```
 
@@ -49,6 +51,7 @@ Local development:
 git clone https://github.com/MohammadAminKoohi/rtl-docx
 cd rtl-docx
 ./install.sh          # CLI + user skill, editable install
+./install.sh --with-redline
 uv sync --dev
 uv run pytest -q
 ```
@@ -81,12 +84,24 @@ rtl-docx reference -o templates/reference.docx
 rtl-docx track in.docx out.docx --author "Amin" \
     --replace "متن قدیم" "متن جدید" --dry-run
 rtl-docx track in.docx out.docx --author "Amin" --edits edits.json
+rtl-docx track in.docx out.docx --author "Amin" --replace "علي" "علی" --normalize-persian
+
+rtl-docx compare old.docx new.docx redline.docx --author "Amin"
+rtl-docx audit redline.docx --original old.docx --author "Amin"
+rtl-docx revisions redline.docx
+rtl-docx accept redline.docx clean.docx
+rtl-docx reject redline.docx original_view.docx
+
+rtl-docx comments list report.docx
+rtl-docx comments add in.docx out.docx --anchor "متن" --text "بازبینی" --author "Amin"
 
 rtl-docx fill template.docx data.json out.docx
 
 rtl-docx inventory report.docx               # body/tables/headers/footers/images
 rtl-docx validate report.docx                # package + OOXML schema checks
 rtl-docx find report.docx "متن" --exact 3    # counts every region, asserts
+rtl-docx lint report.docx                    # Persian/RTL hygiene
+rtl-docx check report.docx report.md         # round-trip text check
 rtl-docx dump report.docx -o text.txt
 rtl-docx diff old.docx new.docx
 
@@ -95,15 +110,19 @@ rtl-docx verify report.docx                  # PDF + 150-dpi PNG pages
 
 ### Guardrails baked in
 
-- **No overwrites.** `build`, `track` and `fill` refuse an existing output path.
+- **No overwrites.** `build`, `track`, `fill`, `compare`, `accept`, `reject`
+  and `comments add` refuse an existing output path.
 - **No in-place edits** of human documents; changes are reviewable revisions.
-- **No region blind spots.** Search counts body paragraphs, every table cell,
-  headers and footers.
-- **No unverified claims.** Round-trip text diff plus a real renderer, with a
-  timeout instead of a hung LibreOffice process.
-- **Schema validation.** `validate` checks package structure, relationships,
-  content types and OOXML schema. LibreOffice opens files Word will ask to
-  repair; this command does not.
+- **No region blind spots.** Search and `track` receipts cover body paragraphs,
+  every table cell, headers and footers.
+- **Redlines are audited.** `compare` produces the tracked changes; `audit`
+  rejects them all and proves the result matches the original, so an untracked
+  edit cannot slip through.
+- **No unverified claims.** `check` diffs the built DOCX against its Markdown;
+  `validate` checks OOXML schema; `verify` renders a real PDF and page PNGs.
+- **Persian-aware matching.** `--normalize-persian` treats Arabic/Persian
+  yeh/kaf and Arabic-Indic digits as equivalent; `lint` flags mixed direction,
+  Arabic variants, Latin punctuation and bidi controls.
 
 ## The RTL details
 
@@ -133,11 +152,13 @@ What is new is the packaging and the defaults:
    problem, which almost every existing docx tool ignores.
 2. **Region-complete verification** (body + table cells + headers + footers) as a
    first-class command with assertions, not an afterthought.
-3. A **tracked-change engine** that refuses unsafe runs instead of corrupting
-   them, and verifies that the old text is no longer visible without accepting
-   revisions.
-4. A **single deterministic CLI** plus a skill that encodes the render-and-look
-   loop, so agents cannot skip it.
+3. A **tracked-change engine across every story part** (body, tables, headers,
+   footers), with per-region receipts, native redlining between versions, and
+   an `audit` that rejects revisions to prove nothing was edited untracked.
+4. **Persian-aware matching and linting** (`--normalize-persian`, `lint`) on top
+   of region-complete assertions.
+5. A **single deterministic CLI** plus a skill that encodes the validate,
+   round-trip and render-and-look loop, so agents cannot skip it.
 
 That is enough for a genuinely useful skill. It is not a new file format or a
 standards contribution — and the README should not pretend otherwise.
@@ -145,9 +166,18 @@ standards contribution — and the README should not pretend otherwise.
 ## Limitations
 
 - `track` matches within one paragraph; matches spanning paragraphs must be
-  split. Text boxes, footnotes and fields are not edited.
-- Filling requires template placeholders that docxtpl can see (not split across
-  runs).
+  split. Text boxes, footnotes and fields are not edited. `--normalize-persian`
+  maps one-to-one variants only; ZWNJ-insensitive matching is for `find`.
+- `compare` needs the optional `redline` extra (43 MB engine). Its output is
+  structurally validated; run `validate` for schema checks. Sources that are
+  already schema-invalid may produce a redline that inherits those errors.
+- `accept`/`reject` handle run-level insertions/deletions/moves and paragraph
+  marks. Exotic table-property or formatting-only revisions are not rewritten.
+- `comments add` anchors within one paragraph; it comments the runs overlapping
+  the anchor, which may highlight more than the exact characters.
+- `check` passes at 0.95 similarity by default because tables and footnotes
+  render differently; use `--strict` for exact comparison of text-only docs.
+- Filling requires placeholders docxtpl can see (not split across runs).
 - Visual fidelity depends on fonts available to LibreOffice; Word may substitute
   differently. Always eyeball the PNGs.
 - Tested on macOS; Windows works if `soffice` is on `PATH` or `SOFFICE` is set.

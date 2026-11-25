@@ -2,10 +2,10 @@
 name: rtl-docx
 description: Create, read, edit, fill, and visually verify Word .docx files, especially Persian/Farsi/Arabic/Hebrew right-to-left documents. Use for any Word task: Markdown-to-DOCX builds with RTL styling, tracked changes on existing files, Jinja2 template filling, text extraction, region-complete search/replace checks, and LibreOffice render verification. Trigger on .docx, Word, Persian, RTL, tracked changes, redline, template, or report generation.
 license: MIT
-compatibility: Requires Python 3.10+ and uv. pandoc is needed for builds; LibreOffice (soffice) and poppler (pdftoppm) for render verification.
+compatibility: Requires Python 3.11+ and uv. pandoc is needed for builds; LibreOffice (soffice) and poppler (pdftoppm) for render verification.
 metadata:
   author: Mohammad Amin Koohi
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # RTL DOCX
@@ -26,7 +26,12 @@ If `rtl-docx` is missing, install it once:
 uv tool install --editable /path/to/rtl-docx     # local checkout
 # or, after publishing:
 uv tool install "git+https://github.com/MohammadAminKoohi/rtl-docx"
+
+# add native DOCX-to-DOCX redlining (43 MB engine):
+uv tool install "rtl-docx[redline] @ git+https://github.com/MohammadAminKoohi/rtl-docx"
 ```
+
+`compare` needs the `redline` extra; everything else runs on the core install.
 
 If `pandoc`, `soffice` or `pdftoppm` are missing:
 
@@ -45,10 +50,15 @@ brew install pandoc librsvg poppler && brew install --cask libreoffice
 | New report or doc | write `.md`, then `rtl-docx build IN.md OUT.docx` |
 | Fill a fixed template | `rtl-docx fill TEMPLATE.docx DATA.json OUT.docx` |
 | Edit an existing human doc | `rtl-docx track IN.docx OUT.docx --author "Name" --replace OLD NEW` |
+| Compare two versions | `rtl-docx compare OLD.docx NEW.docx REDLINE.docx --author "Name"` |
+| List / accept / reject revisions | `revisions`, `accept`, `reject` |
+| Audit a redline | `rtl-docx audit REDLINE.docx --original OLD.docx` |
+| Comments | `rtl-docx comments list/add` |
 | Structural report | `rtl-docx inventory FILE.docx` |
 | OOXML validity | `rtl-docx validate FILE.docx` |
 | Verify text everywhere | `rtl-docx find FILE.docx "TEXT" --exact N` |
-| Round-trip check | `rtl-docx dump` + `rtl-docx diff` |
+| Persian variants / lint | `--normalize-persian`, `rtl-docx lint` |
+| Round-trip build check | `rtl-docx check OUT.docx IN.md` |
 | Render for visual review | `rtl-docx verify FILE.docx` |
 
 ## 2. Hard rules
@@ -63,11 +73,11 @@ brew install pandoc librsvg poppler && brew install --cask libreoffice
 3. **Never edit a human-authored document in place.** Use `track` so every
    change is a native `w:ins`/`w:del` revision with an author, reviewable in
    Word.
-4. **Verify every region.** `find` counts body paragraphs, every table cell,
-   headers and footers. Assert with `--exact` or `--min`; never check only
-   `doc.paragraphs`.
-5. **Round-trip every generated file.** Extract the text back (`dump`/`read`)
-   and diff it against intent before reporting success.
+4. **Verify every region.** `track` returns per-region receipts (body, every
+   table cell, headers, footers); `find` asserts counts with `--exact`/`--min`.
+   Never check only `doc.paragraphs`.
+5. **Round-trip every generated file.** `check OUT.docx IN.md` normalizes
+   Persian variants and diffs the text; use `dump`/`diff` for DOCX-to-DOCX.
 6. **Validate, then render.** `validate` catches schema/relationship errors that
    LibreOffice silently tolerates; `verify` catches layout problems. If
    LibreOffice fails, the XML is broken; if it times out, retry once with
@@ -106,7 +116,39 @@ rtl-docx find OUT.docx "old" --allow-zero
   not bypass that: normalise the paragraph first.
 - Batch edits: `--edits edits.json` with `[{"find": "...", "replace": "..."}]`.
 
-## 5. Fill a template
+## 5. Compare two versions (native redline)
+
+```bash
+rtl-docx compare old.docx new.docx redline.docx --author "Amin"
+rtl-docx audit redline.docx --original old.docx --author "Amin"
+rtl-docx validate redline.docx
+```
+
+- `compare` produces real Word tracked changes (structure-aware: tables, headers,
+  formatting; `--detect-moves` optional). It needs the `redline` extra.
+- `audit` rejects every revision and compares with the original: any remaining
+  difference is an untracked edit. Non-zero exit means do not ship the redline.
+- `revisions`, `accept`, `reject` complete the review loop:
+
+```bash
+rtl-docx revisions redline.docx
+rtl-docx accept redline.docx clean.docx      # accepted view
+rtl-docx reject redline.docx original_view.docx
+```
+
+## 6. Comments
+
+```bash
+rtl-docx comments list FILE.docx
+rtl-docx comments add IN.docx OUT.docx --anchor "متن مورد نظر" \
+  --text "این بخش بازبینی شود" --author "Amin"
+```
+
+- The anchor must lie inside one paragraph; `--occurrence N` picks a later match.
+- Comments are written natively; output is a new file and structurally validated.
+- Read the anchor in the result — `comments list` shows both anchor and comment.
+
+## 7. Fill a template
 
 ```bash
 rtl-docx fill templates/invoice.docx invoice.json output/invoice_0042.docx
@@ -117,7 +159,20 @@ rtl-docx fill templates/invoice.docx invoice.json output/invoice_0042.docx
 - Missing keys fail loudly (StrictUndefined); unresolved `{{` markers in the
   saved package are a hard failure.
 
-## 6. Validate and visually verify
+## 8. Round-trip and RTL lint
+
+```bash
+rtl-docx check OUT.docx IN.md          # PASS at ratio >= 0.95; --strict exact
+rtl-docx lint FILE.docx                # --strict to fail on findings
+```
+
+`check` extracts expected text with pandoc, normalizes Persian variants and
+bidi controls, and diffs against the DOCX text. Small table/footnote rendering
+differences are reported but still PASS; inspect the diff, do not ignore it.
+`lint` flags Arabic yeh/kaf, Arabic-Indic digits, Latin punctuation in Persian
+text, direction mismatches, bidi controls and double spaces.
+
+## 9. Validate and visually verify
 
 ```bash
 rtl-docx validate FILE.docx         # package, relationships, content types, XSD
@@ -139,11 +194,13 @@ Read the PNGs with vision and check for:
 If vision is unavailable, say so explicitly and report the machine checks
 instead of claiming a visual review.
 
-## 7. Done checklist
+## 10. Done checklist
 
 - [ ] Output is a new path; the input is untouched.
 - [ ] `validate` is clean.
-- [ ] `find --exact` passes across body, tables, headers, footers.
-- [ ] `diff`/`dump` shows only intended changes.
+- [ ] `track` receipts show the expected regions; no `old_left`.
+- [ ] A redline passes `audit` with the intended author.
+- [ ] `check` PASS (or `--strict` clean for text-only docs).
+- [ ] `lint` findings reviewed; `--strict` clean when the document is prose.
 - [ ] `verify` succeeds; every page PNG was inspected.
 - [ ] Report page count, regions changed, and warnings (font substitution, etc.).

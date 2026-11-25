@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from .common import open_document, region_text
+from .persian import normalize_for_search
 
 
 class CheckFailed(Exception):
@@ -56,12 +57,21 @@ def inventory(path: str | Path) -> dict[str, int]:
     }
 
 
-def count_matches(path: str | Path, needle: str, regex: bool = False) -> dict[str, int]:
+def count_matches(
+    path: str | Path,
+    needle: str,
+    regex: bool = False,
+    normalize: bool = False,
+    ignore_zwnj: bool = False,
+) -> dict[str, int]:
     """Occurrences per region label, across body, tables, headers and footers."""
-    needle_re = re.compile(needle) if regex else None
+    normalize = normalize or ignore_zwnj
     out: dict[str, int] = {}
+    target = normalize_for_search(needle, ignore_zwnj) if normalize else needle
     for label, text in region_text(open_document(path)).items():
-        n = len(needle_re.findall(text)) if regex else text.count(needle)
+        if normalize:
+            text = normalize_for_search(text, ignore_zwnj)
+        n = len(re.findall(target, text)) if regex else text.count(target)
         if n:
             out[label] = n
     return out

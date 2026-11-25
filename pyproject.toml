@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rtl-docx"
-version = "0.1.1"
+version = "0.2.0"
 description = "RTL-first Word workflow for coding agents: Markdown builds, tracked edits, template fills, region-complete verification."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Amin" }]
 keywords = ["docx", "word", "rtl", "persian", "farsi", "pandoc", "agent", "skill"]
@@ -25,6 +25,9 @@ dependencies = [
   "openxml-audit>=0.8.0",
 ]
 
+[project.optional-dependencies]
+redline = ["python-redlines[docxodus]>=3.0.0"]
+
 [project.scripts]
 rtl-docx = "rtl_docx.cli:main"
 
@@ -33,7 +36,7 @@ Homepage = "https://github.com/MohammadAminKoohi/rtl-docx"
 Issues = "https://github.com/MohammadAminKoohi/rtl-docx/issues"
 
 [dependency-groups]
-dev = ["pytest>=8", "openxml-audit>=0.8.0"]
+dev = ["pytest>=8", "openxml-audit>=0.8.0", "python-redlines[docxodus]>=3.0.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rtl_docx"]

@@ -10,7 +10,11 @@ command -v uv >/dev/null || {
   exit 69
 }
 
-uv tool install --editable "$REPO" --force
+if [[ "${1:-}" == "--with-redline" ]]; then
+  uv tool install --editable "$REPO" --with "python-redlines[docxodus]>=3.0.0" --force
+else
+  uv tool install --editable "$REPO" --force
+fi
 
 mkdir -p "$SKILLS"
 ln -sfn "$REPO" "$SKILLS/rtl-docx"

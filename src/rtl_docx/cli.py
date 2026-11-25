@@ -16,6 +16,10 @@ def _err(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
+def _print_json(data) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
 def cmd_build(args) -> int:
     from .build import build_docx
 
@@ -28,7 +32,7 @@ def cmd_build(args) -> int:
         _err(f"error: pandoc failed with exit code {exc.returncode}")
         return 1
     print(f"built: {out}")
-    print(f"next: rtl-docx verify {out}")
+    print(f"next: rtl-docx validate {out}")
     return 0
 
 
@@ -69,7 +73,7 @@ def cmd_validate(args) -> int:
         return 2
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        _print_json(result)
     else:
         print(f"{'valid' if result['valid'] else 'INVALID'}: {result['file']}")
         print(
@@ -101,7 +105,10 @@ def cmd_find(args) -> int:
     from .guard import CheckFailed, assert_count, count_matches, group_matches
 
     try:
-        hits = count_matches(args.file, args.text, args.regex)
+        hits = count_matches(
+            args.file, args.text, args.regex,
+            normalize=args.normalize, ignore_zwnj=args.ignore_zwnj,
+        )
     except FileNotFoundError as exc:
         _err(f"error: {exc}")
         return 2
@@ -166,14 +173,29 @@ def cmd_track(args) -> int:
         return 2
 
     try:
-        result = apply_edits(args.input, args.output, edits, args.author, args.dry_run)
+        result = apply_edits(
+            args.input, args.output, edits, args.author,
+            args.dry_run, normalize=args.normalize,
+        )
     except (FileNotFoundError, FileExistsError, EditError) as exc:
         _err(f"error: {exc}")
         return 1 if isinstance(exc, EditError) else 2
 
+    if args.json:
+        _print_json(result)
+        return 0
+
     for needle, count in result["per_edit"]:
         verb = "would replace" if result["dry_run"] else "replaced"
         print(f"{verb} {count}x: {needle!r}")
+    for receipt in result["receipts"]:
+        touched = len(receipt["regions"])
+        print(f"  regions touched: {touched}")
+        for label, stats in receipt["regions"].items():
+            print(
+                f"    {label}: found={stats['found']} "
+                f"old_left={stats['old_left']} new_added={stats['new_added']}"
+            )
     if result["dry_run"]:
         print(f"\ndry run: {result['replacements']} change(s); nothing written")
     else:
@@ -212,6 +234,171 @@ def cmd_read(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    from .revisions import RevisionError, compare_documents
+
+    try:
+        result = compare_documents(
+            args.original, args.modified, args.output, args.author,
+            detect_moves=args.detect_moves, case_insensitive=args.case_insensitive,
+        )
+    except (FileNotFoundError, FileExistsError, RevisionError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"redline: {result['output']} ({result['revisions']} revisions by {args.author!r})")
+    if result["engine_stderr"]:
+        _err(result["engine_stderr"])
+    return 0
+
+
+def cmd_revisions(args) -> int:
+    from .revisions import list_revisions, revision_summary
+
+    try:
+        items = list_revisions(args.file)
+    except FileNotFoundError as exc:
+        _err(f"error: {exc}")
+        return 2
+    if args.json:
+        _print_json(items)
+        return 0
+    summary = revision_summary(args.file)
+    print(f"revisions: {summary['count']}  types={summary['by_type']}  authors={summary['by_author']}")
+    for item in items:
+        print(f"  [{item['type']}] {item['author']} {item['date'] or ''}: {item['text'][:80]!r}")
+    return 0
+
+
+def cmd_accept(args) -> int:
+    from .revisions import RevisionError, accept_changes
+
+    try:
+        out = accept_changes(args.input, args.output)
+    except (FileNotFoundError, FileExistsError, RevisionError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"accepted: {out}")
+    return 0
+
+
+def cmd_reject(args) -> int:
+    from .revisions import RevisionError, reject_changes
+
+    try:
+        out = reject_changes(args.input, args.output)
+    except (FileNotFoundError, FileExistsError, RevisionError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"rejected: {out}")
+    return 0
+
+
+def cmd_audit(args) -> int:
+    from .revisions import RevisionError, audit_changes
+
+    try:
+        result = audit_changes(args.file, args.original, args.author)
+    except (FileNotFoundError, RevisionError) as exc:
+        _err(f"error: {exc}")
+        return 2
+
+    if args.json:
+        _print_json(result)
+    else:
+        print(f"revisions: {result['revisions']}  authors={result['authors']}")
+        if result["author_mismatches"]:
+            print(f"author mismatch: {result['author_mismatches']}")
+        if result["clean"]:
+            print("clean: rejecting all revisions reproduces the original")
+        else:
+            print(f"UNTRACKED CHANGES: {result['untracked_count']} differing line(s)")
+            print(result["untracked_diff"])
+    return 0 if result["clean"] else 1
+
+
+def cmd_comments_list(args) -> int:
+    from .comments import list_comments
+
+    try:
+        items = list_comments(args.file)
+    except FileNotFoundError as exc:
+        _err(f"error: {exc}")
+        return 2
+    if args.json:
+        _print_json(items)
+        return 0
+    for item in items:
+        print(f"#{item['id']} {item['author']} {item['date'] or ''}")
+        print(f"  anchor: {item['anchor'][:100]!r}")
+        print(f"  text:   {item['text'][:200]!r}")
+    print(f"total: {len(items)}")
+    return 0
+
+
+def cmd_comments_add(args) -> int:
+    from .comments import CommentError, add_comment
+
+    try:
+        result = add_comment(
+            args.input, args.output, args.anchor, args.text,
+            args.author, args.initials, args.occurrence,
+        )
+    except (FileNotFoundError, FileExistsError, CommentError) as exc:
+        _err(f"error: {exc}")
+        return 1
+    print(f"comment #{result['comment_id']} added at {result['region']}: {result['output']}")
+    return 0
+
+
+def cmd_check(args) -> int:
+    from .check import CheckError, check_document
+
+    try:
+        result = check_document(
+            args.docx, args.markdown,
+            max_report=args.max_report, min_ratio=args.min_ratio,
+        )
+    except (FileNotFoundError, CheckError) as exc:
+        _err(f"error: {exc}")
+        return 2
+
+    if args.json:
+        _print_json(result)
+    else:
+        status = "clean" if result["clean"] else ("PASS" if result["pass"] else "FAIL")
+        print(
+            f"{status}: ratio={result['ratio']} (min {result['min_ratio']}) "
+            f"missing={result['missing_lines']} extra={result['extra_lines']}"
+        )
+        if not result["clean"]:
+            print(result["diff"])
+    if args.strict:
+        return 0 if result["clean"] else 1
+    return 0 if result["pass"] else 1
+
+
+def cmd_lint(args) -> int:
+    from .persian import lint_docx
+
+    try:
+        result = lint_docx(args.file)
+    except FileNotFoundError as exc:
+        _err(f"error: {exc}")
+        return 2
+
+    if args.json:
+        _print_json(result)
+    else:
+        print(f"{args.file}: {result['total']} finding(s)")
+        for finding in result["findings"]:
+            print(f"  {finding['kind']}: {finding['count']}")
+            print(f"    regions: {', '.join(finding['regions'][:4])}"
+                  + (" ..." if len(finding["regions"]) > 4 else ""))
+            for sample in finding["samples"]:
+                print(f"    e.g. {sample!r}")
+    return 1 if args.strict and result["total"] else 0
+
+
 def cmd_doctor(_args) -> int:
     from .build import DEFAULT_REFERENCE
     from .verify import VerifyError, find_soffice
@@ -238,7 +425,12 @@ def cmd_doctor(_args) -> int:
         import openxml_audit  # noqa: F401
         print("schema checks   ok (openxml-audit)")
     except ImportError:
-        print("schema checks   optional (pip install openxml-audit)")
+        print("schema checks   MISSING (pip install openxml-audit)")
+    try:
+        import python_redlines  # noqa: F401
+        print("redline engine  ok (python-redlines)")
+    except ImportError:
+        print('redline engine  optional: uv tool install "rtl-docx[redline]"')
     return 0
 
 
@@ -246,7 +438,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rtl-docx",
         description="RTL-first Word workflow: build from Markdown, tracked edits, "
-                    "template fills, region-complete verification.",
+                    "redlines, template fills, region-complete verification.",
         epilog="Docs: https://github.com/MohammadAminKoohi/rtl-docx",
     )
     parser.add_argument("--version", action="version", version=f"rtl-docx {__version__}")
@@ -284,6 +476,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file", type=Path)
     p.add_argument("text")
     p.add_argument("--regex", action="store_true")
+    p.add_argument("--normalize-persian", dest="normalize", action="store_true",
+                   help="match Arabic/Persian yeh, kaf and digits variants")
+    p.add_argument("--ignore-zwnj", action="store_true")
     p.add_argument("--exact", type=int)
     p.add_argument("--min", type=int)
     p.add_argument("--allow-zero", action="store_true")
@@ -306,7 +501,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--author", default="Codex")
     p.add_argument("--replace", nargs=2, action="append", metavar=("OLD", "NEW"), default=[])
     p.add_argument("--edits", type=Path, help="JSON list of {find, replace}")
+    p.add_argument("--normalize-persian", dest="normalize", action="store_true")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--json", action="store_true", help="print per-region receipts as JSON")
     p.set_defaults(func=cmd_track)
 
     p = sub.add_parser("fill", help="render a docxtpl template with JSON")
@@ -319,6 +516,70 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file", type=Path)
     p.add_argument("-o", "--out")
     p.set_defaults(func=cmd_read)
+
+    p = sub.add_parser("compare", help="redline two .docx versions as tracked changes")
+    p.add_argument("original", type=Path)
+    p.add_argument("modified", type=Path)
+    p.add_argument("output", type=Path)
+    p.add_argument("--author", default="Codex")
+    p.add_argument("--detect-moves", action="store_true")
+    p.add_argument("--case-insensitive", action="store_true")
+    p.set_defaults(func=cmd_compare)
+
+    p = sub.add_parser("revisions", help="list tracked changes")
+    p.add_argument("file", type=Path)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_revisions)
+
+    p = sub.add_parser("accept", help="accept all tracked changes into a new file")
+    p.add_argument("input", type=Path)
+    p.add_argument("output", type=Path)
+    p.set_defaults(func=cmd_accept)
+
+    p = sub.add_parser("reject", help="reject all tracked changes into a new file")
+    p.add_argument("input", type=Path)
+    p.add_argument("output", type=Path)
+    p.set_defaults(func=cmd_reject)
+
+    p = sub.add_parser("audit", help="verify every change in a redline is tracked")
+    p.add_argument("file", type=Path)
+    p.add_argument("--original", type=Path, required=True)
+    p.add_argument("--author", help="require this author on every revision")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("comments", help="list or add Word comments")
+    comments_sub = p.add_subparsers(dest="comments_command", required=True)
+
+    c = comments_sub.add_parser("list")
+    c.add_argument("file", type=Path)
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(func=cmd_comments_list)
+
+    c = comments_sub.add_parser("add")
+    c.add_argument("input", type=Path)
+    c.add_argument("output", type=Path)
+    c.add_argument("--anchor", required=True, help="existing text to attach the comment to")
+    c.add_argument("--text", required=True)
+    c.add_argument("--author", default="Codex")
+    c.add_argument("--initials", default="")
+    c.add_argument("--occurrence", type=int, default=1)
+    c.set_defaults(func=cmd_comments_add)
+
+    p = sub.add_parser("check", help="round-trip text check of a .docx against Markdown")
+    p.add_argument("docx", type=Path)
+    p.add_argument("markdown", type=Path)
+    p.add_argument("--max-report", type=int, default=40)
+    p.add_argument("--min-ratio", type=float, default=0.95)
+    p.add_argument("--strict", action="store_true", help="require an exact match")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("lint", help="Persian/RTL hygiene findings")
+    p.add_argument("file", type=Path)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--strict", action="store_true", help="exit 1 when findings exist")
+    p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("doctor", help="check external dependencies")
     p.set_defaults(func=cmd_doctor)

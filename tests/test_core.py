@@ -203,3 +203,144 @@ def test_validate_rejects_broken_package(tmp_path, regions_docx):
     result = validate_docx(broken)
     assert not result["valid"]
     assert result["errors"]
+
+
+def test_track_receipts_cover_regions(regions_docx, tmp_path):
+    out = tmp_path / "receipts.docx"
+    result = apply_edits(regions_docx, out, [{"find": "OLD", "replace": "NEW"}])
+    receipt = result["receipts"][0]
+    assert receipt["found"] == 4
+    labels = " ".join(receipt["regions"])
+    assert "header" in labels and "footer" in labels and "table" in labels
+    assert all(stats["old_left"] == 0 for stats in receipt["regions"].values())
+    assert sum(stats["found"] for stats in receipt["regions"].values()) == 4
+
+
+def test_track_normalizes_persian_variants(tmp_path):
+    doc = Document()
+    doc.add_paragraph("علي كريم ١٢٣")
+    src = tmp_path / "fa.docx"
+    doc.save(src)
+
+    out = tmp_path / "fa_out.docx"
+    apply_edits(src, out, [{"find": "علی کریم 123", "replace": "علی کریم 456"}], normalize=True)
+    text = dump_text(out)
+    assert "456" in text
+    assert "123" not in text
+
+
+def test_find_normalizes_persian_variants(tmp_path):
+    from rtl_docx.guard import count_matches
+
+    doc = Document()
+    doc.add_paragraph("علي كريم ١٢٣")
+    src = tmp_path / "fa.docx"
+    doc.save(src)
+
+    hits = count_matches(src, "علی کریم 123", normalize=True)
+    assert sum(hits.values()) == 1
+
+
+def test_comments_add_and_list(regions_docx, tmp_path):
+    from rtl_docx.comments import add_comment, list_comments
+
+    out = tmp_path / "commented.docx"
+    result = add_comment(
+        regions_docx, out, "body OLD", "این متن باید بازنویسی شود",
+        author="Amin", initials="A",
+    )
+    assert result["comment_id"] == 0
+
+    comments = list_comments(out)
+    assert len(comments) == 1
+    assert comments[0]["text"] == "این متن باید بازنویسی شود"
+    assert "body OLD" in comments[0]["anchor"]
+
+    from rtl_docx.validate import validate_docx
+    assert validate_docx(out)["valid"]
+
+
+def test_revisions_accept_reject_audit(regions_docx, tmp_path):
+    from rtl_docx.revisions import (
+        accept_changes, audit_changes, list_revisions, reject_changes,
+    )
+
+    tracked = tmp_path / "tracked.docx"
+    apply_edits(regions_docx, tracked, [{"find": "OLD", "replace": "NEW"}])
+
+    items = list_revisions(tracked)
+    assert len(items) >= 4
+    assert {item["type"] for item in items} == {"insertion", "deletion"}
+
+    accepted = tmp_path / "accepted.docx"
+    accept_changes(tracked, accepted)
+    accepted_text = dump_text(accepted)
+    assert "NEW" in accepted_text and "OLD" not in accepted_text
+
+    rejected = tmp_path / "rejected.docx"
+    reject_changes(tracked, rejected)
+    rejected_text = dump_text(rejected)
+    assert "OLD" in rejected_text and "NEW" not in rejected_text
+
+    audit = audit_changes(tracked, regions_docx)
+    assert audit["clean"], audit["untracked_diff"]
+
+    untracked = tmp_path / "untracked.docx"
+    doc = Document(regions_docx)
+    doc.paragraphs[0].text = "body untracked"
+    doc.save(untracked)
+    bad = audit_changes(untracked, regions_docx)
+    assert not bad["clean"]
+
+
+def test_compare_documents(tmp_path):
+    from rtl_docx.revisions import compare_documents, count_revisions_xml
+
+    a = Document()
+    a.add_paragraph("قرارداد نسخه اول است.")
+    old = tmp_path / "old.docx"
+    a.save(old)
+
+    b = Document()
+    b.add_paragraph("قرارداد نسخه دوم است.")
+    new = tmp_path / "new.docx"
+    b.save(new)
+
+    out = tmp_path / "redline.docx"
+    result = compare_documents(old, new, out, author="Amin")
+    assert out.exists()
+    assert count_revisions_xml(out) > 0
+    assert result["revisions"] > 0
+
+    from rtl_docx.validate import validate_docx
+    assert validate_docx(out)["valid"]
+
+
+def test_lint_persian_issues(tmp_path):
+    from rtl_docx.persian import lint_docx
+
+    doc = Document()
+    doc.add_paragraph("علي كريم, ١٢٣")
+    src = tmp_path / "lint.docx"
+    doc.save(src)
+
+    result = lint_docx(src)
+    kinds = {finding["kind"] for finding in result["findings"]}
+    assert "arabic_yeh" in kinds
+    assert "arabic_kaf" in kinds
+    assert "arabic_indic_digits" in kinds
+    assert "latin_punctuation" in kinds
+
+
+@pytest.mark.skipif(not shutil.which("pandoc"), reason="pandoc not installed")
+def test_roundtrip_check(tmp_path):
+    from rtl_docx.build import build_docx
+    from rtl_docx.check import check_document
+
+    md = tmp_path / "doc.md"
+    md.write_text("# عنوان\n\nمتن فارسی برای بررسی.\n", encoding="utf-8")
+    out = tmp_path / "doc.docx"
+    build_docx(md, out)
+
+    result = check_document(out, md)
+    assert result["clean"], result["diff"]
