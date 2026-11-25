@@ -48,8 +48,8 @@ Local development:
 ```bash
 git clone https://github.com/OWNER/rtl-docx
 cd rtl-docx
+./install.sh          # CLI + user skill, editable install
 uv sync --dev
-uv run rtl-docx doctor
 uv run pytest -q
 ```
 
