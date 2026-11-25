@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="rtl-docx",
         description="RTL-first Word workflow: build from Markdown, tracked edits, "
                     "template fills, region-complete verification.",
-        epilog="Docs: https://github.com/OWNER/rtl-docx",
+        epilog="Docs: https://github.com/MohammadAminKoohi/rtl-docx",
     )
     parser.add_argument("--version", action="version", version=f"rtl-docx {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)

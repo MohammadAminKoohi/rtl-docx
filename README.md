@@ -39,14 +39,14 @@ functionality `pandoc`, LibreOffice and poppler:
 brew install pandoc librsvg poppler
 brew install --cask libreoffice
 
-uv tool install "git+https://github.com/YOUR_USERNAME/rtl-docx"
+uv tool install "git+https://github.com/MohammadAminKoohi/rtl-docx"
 rtl-docx doctor
 ```
 
 Local development:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/rtl-docx
+git clone https://github.com/MohammadAminKoohi/rtl-docx
 cd rtl-docx
 ./install.sh          # CLI + user skill, editable install
 uv sync --dev
@@ -59,7 +59,7 @@ Codex CLI and OpenCode both scan `~/.agents/skills`. A skill is just a folder
 with `SKILL.md`; this repo is one:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/rtl-docx ~/.local/share/rtl-docx
+git clone https://github.com/MohammadAminKoohi/rtl-docx ~/.local/share/rtl-docx
 ln -s ~/.local/share/rtl-docx ~/.agents/skills/rtl-docx
 uv tool install --editable ~/.local/share/rtl-docx
 ```
@@ -147,18 +147,17 @@ standards contribution — and the README should not pretend otherwise.
   differently. Always eyeball the PNGs.
 - Tested on macOS; Windows works if `soffice` is on `PATH` or `SOFFICE` is set.
 
-## Publish it
+## Releasing
+
+The repository doubles as the skill. To cut a release:
 
 ```bash
-git init
-git add .
-git commit -m "rtl-docx: RTL-first Word workflow for agents"
-gh repo create rtl-docx --public --source=. --push
+git tag v0.1.1 && git push origin main --tags
+uv build && uv publish      # needs a PyPI token
 ```
 
-Then replace `YOUR_USERNAME` in `pyproject.toml`, `README.md` and `SKILL.md`. If you want
-one-click distribution to ChatGPT/Codex, wrap the same skill in a plugin; the
-CLI stays the deterministic core.
+For one-click distribution to ChatGPT/Codex, wrap the same skill in a plugin;
+the CLI stays the deterministic core.
 
 ## License
 
