@@ -21,7 +21,7 @@ If `rtl-docx` is missing, install it once:
 ```bash
 uv tool install --editable /path/to/rtl-docx     # local checkout
 # or, after publishing:
-uv tool install "git+https://github.com/OWNER/rtl-docx"
+uv tool install "git+https://github.com/YOUR_USERNAME/rtl-docx"
 ```
 
 If `pandoc`, `soffice` or `pdftoppm` are missing:

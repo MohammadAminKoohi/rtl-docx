@@ -28,8 +28,8 @@ dependencies = [
 rtl-docx = "rtl_docx.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/rtl-docx"
-Issues = "https://github.com/OWNER/rtl-docx/issues"
+Homepage = "https://github.com/YOUR_USERNAME/rtl-docx"
+Issues = "https://github.com/YOUR_USERNAME/rtl-docx/issues"
 
 [dependency-groups]
 dev = ["pytest>=8"]
