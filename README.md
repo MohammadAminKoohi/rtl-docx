@@ -149,11 +149,29 @@ standards contribution — and the README should not pretend otherwise.
 
 ## Releasing
 
-The repository doubles as the skill. To cut a release:
+The repository doubles as the skill.
+
+**Trusted publishing (recommended, no token):** the `publish` workflow uploads
+on every `v*` tag using PyPI trusted publishing. Configure a
+[pending publisher](https://pypi.org/manage/account/publishing/) with:
+
+- project: `rtl-docx`
+- owner: `MohammadAminKoohi`
+- repository: `rtl-docx`
+- workflow name: `publish.yml`
+- environment: `pypi`
+
+Then:
 
 ```bash
-git tag v0.1.1 && git push origin main --tags
-uv build && uv publish      # needs a PyPI token
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+**Local token upload:**
+
+```bash
+uv build
+UV_PUBLISH_TOKEN=pypi-your-token uv publish
 ```
 
 For one-click distribution to ChatGPT/Codex, wrap the same skill in a plugin;
