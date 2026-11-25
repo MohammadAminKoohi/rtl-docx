@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rtl-docx"
+version = "0.1.0"
+description = "RTL-first Word workflow for coding agents: Markdown builds, tracked edits, template fills, region-complete verification."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Amin" }]
+keywords = ["docx", "word", "rtl", "persian", "farsi", "pandoc", "agent", "skill"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Text Processing :: Markup",
+]
+dependencies = [
+  "python-docx>=1.1.2",
+  "docxtpl>=0.19.0",
+  "markitdown[docx]>=0.1.0",
+  "jinja2>=3.1",
+]
+
+[project.scripts]
+rtl-docx = "rtl_docx.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/rtl-docx"
+Issues = "https://github.com/OWNER/rtl-docx/issues"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rtl_docx"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "SKILL.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

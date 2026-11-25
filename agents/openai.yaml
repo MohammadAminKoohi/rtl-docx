@@ -1,0 +1,7 @@
+interface:
+  display_name: "RTL DOCX"
+  short_description: "Persian/RTL Word docs: build, edit, fill, verify"
+  default_prompt: "Use $rtl-docx to build or edit a Persian Word document, then verify the rendered pages."
+
+policy:
+  allow_implicit_invocation: true
