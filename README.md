@@ -85,6 +85,7 @@ rtl-docx track in.docx out.docx --author "Amin" --edits edits.json
 rtl-docx fill template.docx data.json out.docx
 
 rtl-docx inventory report.docx               # body/tables/headers/footers/images
+rtl-docx validate report.docx                # package + OOXML schema checks
 rtl-docx find report.docx "متن" --exact 3    # counts every region, asserts
 rtl-docx dump report.docx -o text.txt
 rtl-docx diff old.docx new.docx
@@ -100,19 +101,23 @@ rtl-docx verify report.docx                  # PDF + 150-dpi PNG pages
   headers and footers.
 - **No unverified claims.** Round-trip text diff plus a real renderer, with a
   timeout instead of a hung LibreOffice process.
+- **Schema validation.** `validate` checks package structure, relationships,
+  content types and OOXML schema. LibreOffice opens files Word will ask to
+  repair; this command does not.
 
 ## The RTL details
 
 `src/rtl_docx/assets/reference.docx` sets:
 
 - A4, 2.5 cm margins, 1.5 line spacing, Arial
-- `w:bidi` section + `w:rtl` runs with `w:lang w:bidi="fa-IR"`
+- `w:bidi` section + `w:lang w:bidi="fa-IR"` in styles
 - right-aligned headings, centred titles, justified body
 - `bidiVisual` tables
 - right-aligned table direction and mirrored cell margins
 - explicit **LTR** only for `Source Code` / `Verbatim Char`
-- code paragraphs stamped `w:bidi=0` and `w:rtl=0` after the build, because some
-  renderers ignore a style-level override on an RTL section
+- `w:rtl` stamped on every **run** after the build — never in style `rPr`,
+  where OOXML does not allow it
+- code paragraphs stamped `w:bidi=0` and runs `w:rtl=0`
 
 Export it, restyle it in Word, and pass it back with `--reference`.
 

@@ -162,6 +162,7 @@ def test_build_rtl_docx(tmp_path):
     out = tmp_path / "doc.docx"
 
     from rtl_docx.build import build_docx
+    from rtl_docx.validate import validate_docx
 
     build_docx(md, out)
     doc = Document(out)
@@ -171,5 +172,34 @@ def test_build_rtl_docx(tmp_path):
     ppr = code._p.find(qn("w:pPr"))
     assert ppr.find(qn("w:bidi")).get(qn("w:val")) == "0"
 
-    normal = doc.styles["Normal"].element.find(qn("w:pPr")).find(qn("w:bidi"))
-    assert normal is not None
+    # Run-level direction is valid; style-level w:rtl is not allowed by OOXML.
+    code_run = code._p.find(qn("w:r"))
+    assert code_run.find(qn("w:rPr")).find(qn("w:rtl")).get(qn("w:val")) == "0"
+    body = [p for p in doc.paragraphs if "متن فارسی" in p.text][0]
+    body_run = body._p.find(qn("w:r"))
+    assert body_run.find(qn("w:rPr")).find(qn("w:rtl")).get(qn("w:val")) == "1"
+
+    normal = doc.styles["Normal"].element
+    assert normal.find(qn("w:rPr")).find(qn("w:rtl")) is None
+
+    result = validate_docx(out)
+    assert result["schema_checked"], "openxml-audit should be installed for tests"
+    assert result["valid"], result["errors"]
+
+
+def test_reference_is_schema_valid():
+    from rtl_docx.validate import validate_docx
+
+    result = validate_docx(DEFAULT_REFERENCE)
+    assert result["schema_checked"]
+    assert result["valid"], result["errors"]
+
+
+def test_validate_rejects_broken_package(tmp_path, regions_docx):
+    from rtl_docx.validate import validate_docx
+
+    broken = tmp_path / "broken.docx"
+    broken.write_bytes(regions_docx.read_bytes()[:200])
+    result = validate_docx(broken)
+    assert not result["valid"]
+    assert result["errors"]

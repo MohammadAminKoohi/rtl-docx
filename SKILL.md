@@ -2,6 +2,10 @@
 name: rtl-docx
 description: Create, read, edit, fill, and visually verify Word .docx files, especially Persian/Farsi/Arabic/Hebrew right-to-left documents. Use for any Word task: Markdown-to-DOCX builds with RTL styling, tracked changes on existing files, Jinja2 template filling, text extraction, region-complete search/replace checks, and LibreOffice render verification. Trigger on .docx, Word, Persian, RTL, tracked changes, redline, template, or report generation.
 license: MIT
+compatibility: Requires Python 3.10+ and uv. pandoc is needed for builds; LibreOffice (soffice) and poppler (pdftoppm) for render verification.
+metadata:
+  author: Mohammad Amin Koohi
+  version: "0.1.1"
 ---
 
 # RTL DOCX
@@ -42,6 +46,7 @@ brew install pandoc librsvg poppler && brew install --cask libreoffice
 | Fill a fixed template | `rtl-docx fill TEMPLATE.docx DATA.json OUT.docx` |
 | Edit an existing human doc | `rtl-docx track IN.docx OUT.docx --author "Name" --replace OLD NEW` |
 | Structural report | `rtl-docx inventory FILE.docx` |
+| OOXML validity | `rtl-docx validate FILE.docx` |
 | Verify text everywhere | `rtl-docx find FILE.docx "TEXT" --exact N` |
 | Round-trip check | `rtl-docx dump` + `rtl-docx diff` |
 | Render for visual review | `rtl-docx verify FILE.docx` |
@@ -63,8 +68,10 @@ brew install pandoc librsvg poppler && brew install --cask libreoffice
    `doc.paragraphs`.
 5. **Round-trip every generated file.** Extract the text back (`dump`/`read`)
    and diff it against intent before reporting success.
-6. **Render before declaring done.** If LibreOffice fails, the XML is broken;
-   if it times out, retry once with `--timeout 300` before calling it corrupt.
+6. **Validate, then render.** `validate` catches schema/relationship errors that
+   LibreOffice silently tolerates; `verify` catches layout problems. If
+   LibreOffice fails, the XML is broken; if it times out, retry once with
+   `--timeout 300` before calling it corrupt.
 
 ## 3. Build a document
 
@@ -72,6 +79,7 @@ Write Markdown as the source of truth, then:
 
 ```bash
 rtl-docx build report.md output/report.docx
+rtl-docx validate output/report.docx
 rtl-docx verify output/report.docx
 ```
 
@@ -109,11 +117,16 @@ rtl-docx fill templates/invoice.docx invoice.json output/invoice_0042.docx
 - Missing keys fail loudly (StrictUndefined); unresolved `{{` markers in the
   saved package are a hard failure.
 
-## 6. Visual verification
+## 6. Validate and visually verify
 
 ```bash
-rtl-docx verify FILE.docx            # 150-dpi PNGs under .docx-verify/<name>/
+rtl-docx validate FILE.docx         # package, relationships, content types, XSD
+rtl-docx verify FILE.docx           # 150-dpi PNGs under .docx-verify/<name>/
 ```
+
+`validate` checks package structure, relationships, content types and OOXML
+schema (pure Python, no .NET via `openxml-audit`). It should be clean before you
+spend time looking at pages.
 
 Read the PNGs with vision and check for:
 
@@ -129,6 +142,7 @@ instead of claiming a visual review.
 ## 7. Done checklist
 
 - [ ] Output is a new path; the input is untouched.
+- [ ] `validate` is clean.
 - [ ] `find --exact` passes across body, tables, headers, footers.
 - [ ] `diff`/`dump` shows only intended changes.
 - [ ] `verify` succeeds; every page PNG was inspected.

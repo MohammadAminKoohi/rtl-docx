@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rtl-docx"
-version = "0.1.0"
+version = "0.1.1"
 description = "RTL-first Word workflow for coding agents: Markdown builds, tracked edits, template fills, region-complete verification."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ dependencies = [
   "docxtpl>=0.19.0",
   "markitdown[docx]>=0.1.0",
   "jinja2>=3.1",
+  "openxml-audit>=0.8.0",
 ]
 
 [project.scripts]
@@ -32,7 +33,7 @@ Homepage = "https://github.com/MohammadAminKoohi/rtl-docx"
 Issues = "https://github.com/MohammadAminKoohi/rtl-docx/issues"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "openxml-audit>=0.8.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rtl_docx"]

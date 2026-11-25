@@ -59,6 +59,30 @@ def cmd_verify(args) -> int:
     return 0
 
 
+def cmd_validate(args) -> int:
+    from .validate import validate_docx
+
+    try:
+        result = validate_docx(args.file, schema=not args.no_schema, max_errors=args.max_errors)
+    except FileNotFoundError as exc:
+        _err(f"error: {exc}")
+        return 2
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"{'valid' if result['valid'] else 'INVALID'}: {result['file']}")
+        print(
+            "schema checks: "
+            + ("run" if result["schema_checked"] else "skipped (pip install openxml-audit)")
+        )
+        for warning in result["warnings"]:
+            print(f"warning: {warning}")
+        for error in result["errors"]:
+            print(f"error: {error}")
+    return 0 if result["valid"] else 1
+
+
 def cmd_inventory(args) -> int:
     from .guard import inventory
 
@@ -210,6 +234,11 @@ def cmd_doctor(_args) -> int:
         print(f"soffice         NOT FOUND ({exc})")
     pdftoppm = shutil.which("pdftoppm")
     print(f"pdftoppm        {'ok' if pdftoppm else 'NOT FOUND'}")
+    try:
+        import openxml_audit  # noqa: F401
+        print("schema checks   ok (openxml-audit)")
+    except ImportError:
+        print("schema checks   optional (pip install openxml-audit)")
     return 0
 
 
@@ -239,6 +268,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dpi", type=int, default=150)
     p.add_argument("--timeout", type=int, default=120)
     p.set_defaults(func=cmd_verify)
+
+    p = sub.add_parser("validate", help="OOXML package/schema validation")
+    p.add_argument("file", type=Path)
+    p.add_argument("--no-schema", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--max-errors", type=int, default=50)
+    p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("inventory", help="structural counts")
     p.add_argument("file", type=Path)
